@@ -1,15 +1,16 @@
-// Option 1: If you're using React Router v6 (most common)
-// Update your main App.js file
-
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 
-// Import your components
+// Import components
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
+import TaxConfigurations from './components/TaxConfigurations';
+import TaxExemptions from './components/TaxExemptions';
+import TaxReports from './components/TaxReports';
+import TaxCalculator from './components/TaxCalculator';
 import { authService } from './services/api';
 
 function App() {
@@ -43,10 +44,16 @@ function App() {
     setIsAuthenticated(true);
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('drc_token');
-    setUser(null);
-    setIsAuthenticated(false);
+  const handleLogout = async () => {
+    try {
+      await authService.logout();
+    } catch (error) {
+      console.error('Logout error:', error);
+    } finally {
+      localStorage.removeItem('drc_token');
+      setUser(null);
+      setIsAuthenticated(false);
+    }
   };
 
   if (loading) {
@@ -58,7 +65,6 @@ function App() {
   }
 
   return (
-    // IMPORTANT: Add basename="/hotel" here for the /hotel/ path
     <Router basename="/hotel">
       <div className="App">
         <Toaster position="top-right" />
@@ -74,10 +80,12 @@ function App() {
                 <Routes>
                   <Route path="/" element={<Navigate to="/dashboard" replace />} />
                   <Route path="/dashboard" element={<Dashboard />} />
-                  <Route path="/configurations" element={<div>Tax Configurations Page</div>} />
-                  <Route path="/exemptions" element={<div>Tax Exemptions Page</div>} />
-                  <Route path="/rapports" element={<div>Reports Page</div>} />
-                  {/* Add more routes as needed */}
+                  <Route path="/configurations" element={<TaxConfigurations />} />
+                  <Route path="/exemptions" element={<TaxExemptions />} />
+                  <Route path="/calculateur" element={<TaxCalculator />} />
+                  <Route path="/rapports" element={<TaxReports />} />
+                  {/* Catch all route */}
+                  <Route path="*" element={<Navigate to="/dashboard" replace />} />
                 </Routes>
               </main>
             </div>

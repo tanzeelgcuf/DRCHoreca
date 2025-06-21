@@ -269,7 +269,7 @@ import {
   DocumentTextIcon,
   ChartBarIcon,
   ExclamationTriangleIcon
-} from '@heroicons/react/24/outline';
+} from '@@heroicons/react/24/outline';
 
 const Sidebar = () => {
   const location = useLocation();
@@ -358,7 +358,7 @@ EOF
 # Create Header Component  
 cat > src/components/Header.js << 'EOF'
 import React from 'react';
-import { UserIcon, ArrowRightOnRectangleIcon } from '@heroicons/react/24/outline';
+import { UserIcon, ArrowRightOnRectangleIcon } from '@h@heroicons/react/24/outline';
 
 const Header = ({ user, onLogout }) => {
   return (

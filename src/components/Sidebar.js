@@ -5,7 +5,8 @@ import {
   CogIcon,
   DocumentTextIcon,
   ChartBarIcon,
-  ExclamationTriangleIcon
+  ExclamationTriangleIcon,
+  CalculatorIcon
 } from '@heroicons/react/24/outline';
 
 const Sidebar = () => {
@@ -29,6 +30,12 @@ const Sidebar = () => {
       href: '/exemptions',
       icon: ExclamationTriangleIcon,
       description: 'Gérer les exemptions fiscales'
+    },
+    {
+      name: 'Calculateur',
+      href: '/calculateur',
+      icon: CalculatorIcon,
+      description: 'Calculer les taxes'
     },
     {
       name: 'Rapports',
@@ -83,6 +90,10 @@ const Sidebar = () => {
         <div className="text-xs text-gray-500 text-center">
           <p>© 2024 DRC API</p>
           <p>Plateforme de gestion fiscale</p>
+          <div className="mt-2 flex items-center justify-center space-x-1">
+            <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+            <span className="text-green-600">Connecté au serveur</span>
+          </div>
         </div>
       </div>
     </div>
