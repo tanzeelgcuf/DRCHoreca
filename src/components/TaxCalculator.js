@@ -1,3 +1,4 @@
+// src/components/TaxCalculator.js - Enhanced version with full backend integration
 import React, { useState, useEffect } from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
 import toast from 'react-hot-toast';
@@ -5,16 +6,21 @@ import {
   CalculatorIcon,
   PlusIcon,
   TrashIcon,
-  CurrencyDollarIcon
-} from '@@heroicons/react/24/outline';
-import { taxService, establishmentService, clientService } from '../services/api';
+  CurrencyDollarIcon,
+  ExclamationTriangleIcon,
+  CheckCircleIcon,
+  DocumentTextIcon
+} from '@heroicons/react/24/outline';
+import { taxService, establishmentService, clientService, stayService } from '../services/api';
 
 const TaxCalculator = () => {
   const [establishments, setEstablishments] = useState([]);
   const [clients, setClients] = useState([]);
   const [stays, setStays] = useState([]);
+  const [taxConfigurations, setTaxConfigurations] = useState([]);
   const [calculation, setCalculation] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [loadingData, setLoadingData] = useState(true);
 
   const { register, handleSubmit, control, watch, reset, formState: { errors } } = useForm({
     defaultValues: {
@@ -39,12 +45,23 @@ const TaxCalculator = () => {
     name: 'items'
   });
 
+  const watchEstablishmentId = watch('establishmentId');
+  const watchClientId = watch('clientId');
+
   useEffect(() => {
-    fetchData();
+    fetchInitialData();
   }, []);
 
-  const fetchData = async () => {
+  useEffect(() => {
+    if (watchEstablishmentId) {
+      fetchStaysForEstablishment(watchEstablishmentId);
+      fetchTaxConfigurations(watchEstablishmentId);
+    }
+  }, [watchEstablishmentId]);
+
+  const fetchInitialData = async () => {
     try {
+      setLoadingData(true);
       const [establishmentsResponse, clientsResponse] = await Promise.all([
         establishmentService.getEstablishments(),
         clientService.getClients()
@@ -53,8 +70,36 @@ const TaxCalculator = () => {
       setEstablishments(establishmentsResponse.data || []);
       setClients(clientsResponse.data || []);
     } catch (error) {
-      console.error('Error fetching data:', error);
-      toast.error('Erreur lors du chargement des données');
+      console.error('Error fetching initial data:', error);
+      toast.error('Erreur lors du chargement des données initiales');
+    } finally {
+      setLoadingData(false);
+    }
+  };
+
+  const fetchStaysForEstablishment = async (establishmentId) => {
+    try {
+      const response = await stayService.getStays({ 
+        establishmentId,
+        status: 'active'
+      });
+      setStays(response.data || []);
+    } catch (error) {
+      console.error('Error fetching stays:', error);
+      setStays([]);
+    }
+  };
+
+  const fetchTaxConfigurations = async (establishmentId) => {
+    try {
+      const response = await taxService.getTaxConfigurations({ 
+        establishmentId,
+        active: true
+      });
+      setTaxConfigurations(response.data || []);
+    } catch (error) {
+      console.error('Error fetching tax configurations:', error);
+      setTaxConfigurations([]);
     }
   };
 
@@ -62,56 +107,36 @@ const TaxCalculator = () => {
     try {
       setLoading(true);
       
-      // Préparer les données pour l'API
+      // Prepare data for API call according to backend spec
       const calculationData = {
-        ...data,
         establishmentId: parseInt(data.establishmentId),
         stayId: data.stayId ? parseInt(data.stayId) : undefined,
         clientId: data.clientId ? parseInt(data.clientId) : undefined,
         items: data.items.map(item => ({
-          ...item,
-          quantity: parseInt(item.quantity),
-          unitPrice: parseFloat(item.unitPrice),
-          totalPrice: parseFloat(item.totalPrice)
-        }))
+          type: item.type,
+          description: item.description,
+          quantity: parseInt(item.quantity) || 1,
+          unitPrice: parseFloat(item.unitPrice) || 0,
+          totalPrice: parseFloat(item.totalPrice) || 0
+        })),
+        checkForExemptions: data.checkForExemptions
       };
 
+      console.log('Sending calculation request:', calculationData);
+      
       const response = await taxService.calculateTax(calculationData);
       setCalculation(response);
       toast.success('Calcul effectué avec succès');
     } catch (error) {
       console.error('Error calculating tax:', error);
-      toast.error('Erreur lors du calcul des taxes');
+      toast.error(error.message || 'Erreur lors du calcul des taxes');
       
-      // Simulation d'un calcul en cas d'erreur API
-      const mockCalculation = {
-        subtotal: data.items.reduce((sum, item) => sum + parseFloat(item.totalPrice || 0), 0),
-        taxDetails: [
-          {
-            taxId: 1,
-            name: 'TVA Standard',
-            type: 'percentage',
-            rate: 20.0,
-            taxableAmount: 300.0,
-            taxAmount: 60.0,
-            appliedTo: ['accommodation']
-          },
-          {
-            taxId: 2,
-            name: 'Taxe de séjour',
-            type: 'fixed_per_night',
-            rate: 2.5,
-            taxableAmount: data.items.find(item => item.type === 'accommodation')?.quantity || 1,
-            taxAmount: 5.0,
-            appliedTo: ['accommodation']
-          }
-        ],
-        exemptions: [],
-        totalTax: 65.0,
-        totalAmount: 365.0,
-        currency: 'CDF'
-      };
-      setCalculation(mockCalculation);
+      // Show more specific error details if available
+      if (error.details) {
+        Object.entries(error.details).forEach(([field, messages]) => {
+          messages.forEach(message => toast.error(`${field}: ${message}`));
+        });
+      }
     } finally {
       setLoading(false);
     }
@@ -128,7 +153,7 @@ const TaxCalculator = () => {
   };
 
   const updateItemTotal = (index, quantity, unitPrice) => {
-    const total = quantity * unitPrice;
+    const total = (quantity || 0) * (unitPrice || 0);
     const currentItems = watch('items');
     currentItems[index].totalPrice = total;
     reset({ ...watch(), items: currentItems });
@@ -139,20 +164,39 @@ const TaxCalculator = () => {
       style: 'currency',
       currency: 'CDF',
       minimumFractionDigits: 2
-    }).format(amount);
+    }).format(amount || 0);
   };
+
+  const getClientName = (clientId) => {
+    const client = clients.find(c => c.id === parseInt(clientId));
+    return client ? `${client.firstName} ${client.lastName}` : 'Client inconnu';
+  };
+
+  const getStayInfo = (stayId) => {
+    const stay = stays.find(s => s.id === parseInt(stayId));
+    return stay ? `Chambre ${stay.room} (${stay.duration} nuits)` : 'Séjour inconnu';
+  };
+
+  if (loadingData) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <span className="ml-3 text-gray-600">Chargement des données...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div>
         <h1 className="text-3xl font-bold text-gray-900">Calculateur de taxes</h1>
-        <p className="text-gray-600 mt-2">Calculez les taxes applicables à un séjour</p>
+        <p className="text-gray-600 mt-2">Calculez les taxes applicables à un séjour selon votre configuration</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         {/* Formulaire de calcul */}
-        <div className="bg-white p-6 rounded-lg shadow">
+        <div className="xl:col-span-2 bg-white p-6 rounded-lg shadow">
           <h2 className="text-lg font-medium text-gray-900 mb-4">Informations du séjour</h2>
           
           <form onSubmit={handleSubmit(handleCalculate)} className="space-y-4">
@@ -187,14 +231,35 @@ const TaxCalculator = () => {
                   <option value="">Sélectionnez un client</option>
                   {clients.map(client => (
                     <option key={client.id} value={client.id}>
-                      {client.firstName} {client.lastName}
+                      {client.firstName} {client.lastName} - {client.nationality}
                     </option>
                   ))}
                 </select>
               </div>
             </div>
 
-            {/* Articles */}
+            {/* Séjour (si applicable) */}
+            {watchEstablishmentId && stays.length > 0 && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Séjour associé (optionnel)
+                </label>
+                <select
+                  {...register('stayId')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Sélectionnez un séjour</option>
+                  {stays.map(stay => (
+                    <option key={stay.id} value={stay.id}>
+                      Chambre {stay.room} - {stay.duration} nuits 
+                      {stay.client && ` (${stay.client.firstName} ${stay.client.lastName})`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Articles / Services */}
             <div>
               <div className="flex justify-between items-center mb-3">
                 <label className="block text-sm font-medium text-gray-700">
@@ -210,79 +275,84 @@ const TaxCalculator = () => {
                 </button>
               </div>
 
-              {fields.map((field, index) => (
-                <div key={field.id} className="grid grid-cols-12 gap-2 mb-3 p-3 border border-gray-200 rounded-md">
-                  <div className="col-span-3">
-                    <select
-                      {...register(`items.${index}.type`)}
-                      className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                    >
-                      <option value="accommodation">Hébergement</option>
-                      <option value="food">Restauration</option>
-                      <option value="services">Services</option>
-                      <option value="other">Autre</option>
-                    </select>
-                  </div>
-                  <div className="col-span-4">
-                    <input
-                      type="text"
-                      {...register(`items.${index}.description`)}
-                      placeholder="Description"
-                      className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                    />
-                  </div>
-                  <div className="col-span-1">
-                    <input
-                      type="number"
-                      {...register(`items.${index}.quantity`, {
-                        onChange: (e) => {
-                          const quantity = parseInt(e.target.value) || 0;
-                          const unitPrice = parseFloat(watch(`items.${index}.unitPrice`)) || 0;
-                          updateItemTotal(index, quantity, unitPrice);
-                        }
-                      })}
-                      placeholder="Qté"
-                      className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                    />
-                  </div>
-                  <div className="col-span-2">
-                    <input
-                      type="number"
-                      step="0.01"
-                      {...register(`items.${index}.unitPrice`, {
-                        onChange: (e) => {
-                          const unitPrice = parseFloat(e.target.value) || 0;
-                          const quantity = parseInt(watch(`items.${index}.quantity`)) || 0;
-                          updateItemTotal(index, quantity, unitPrice);
-                        }
-                      })}
-                      placeholder="Prix unitaire"
-                      className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                    />
-                  </div>
-                  <div className="col-span-1">
-                    <input
-                      type="number"
-                      step="0.01"
-                      {...register(`items.${index}.totalPrice`)}
-                      placeholder="Total"
-                      readOnly
-                      className="w-full px-2 py-1 border border-gray-300 rounded text-sm bg-gray-50"
-                    />
-                  </div>
-                  <div className="col-span-1">
-                    {fields.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => remove(index)}
-                        className="text-red-600 hover:text-red-900"
+              <div className="space-y-3">
+                {fields.map((field, index) => (
+                  <div key={field.id} className="grid grid-cols-12 gap-2 p-3 border border-gray-200 rounded-md">
+                    <div className="col-span-3">
+                      <select
+                        {...register(`items.${index}.type`)}
+                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
                       >
-                        <TrashIcon className="w-4 h-4" />
-                      </button>
-                    )}
+                        <option value="accommodation">Hébergement</option>
+                        <option value="food">Restauration</option>
+                        <option value="services">Services</option>
+                        <option value="restaurant">Restaurant</option>
+                        <option value="other">Autre</option>
+                      </select>
+                    </div>
+                    <div className="col-span-4">
+                      <input
+                        type="text"
+                        {...register(`items.${index}.description`)}
+                        placeholder="Description"
+                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                      />
+                    </div>
+                    <div className="col-span-1">
+                      <input
+                        type="number"
+                        min="1"
+                        {...register(`items.${index}.quantity`, {
+                          onChange: (e) => {
+                            const quantity = parseInt(e.target.value) || 0;
+                            const unitPrice = parseFloat(watch(`items.${index}.unitPrice`)) || 0;
+                            updateItemTotal(index, quantity, unitPrice);
+                          }
+                        })}
+                        placeholder="Qté"
+                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        {...register(`items.${index}.unitPrice`, {
+                          onChange: (e) => {
+                            const unitPrice = parseFloat(e.target.value) || 0;
+                            const quantity = parseInt(watch(`items.${index}.quantity`)) || 0;
+                            updateItemTotal(index, quantity, unitPrice);
+                          }
+                        })}
+                        placeholder="Prix unitaire"
+                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                      />
+                    </div>
+                    <div className="col-span-1">
+                      <input
+                        type="number"
+                        step="0.01"
+                        {...register(`items.${index}.totalPrice`)}
+                        placeholder="Total"
+                        readOnly
+                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm bg-gray-50"
+                      />
+                    </div>
+                    <div className="col-span-1">
+                      {fields.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => remove(index)}
+                          className="text-red-600 hover:text-red-900"
+                        >
+                          <TrashIcon className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
 
             {/* Options */}
@@ -294,15 +364,38 @@ const TaxCalculator = () => {
                   className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                 />
                 <span className="ml-2 text-sm text-gray-700">
-                  Vérifier les exonérations applicables
+                  Vérifier les exonérations applicables pour ce client
                 </span>
               </label>
             </div>
 
+            {/* Configuration fiscale info */}
+            {watchEstablishmentId && taxConfigurations.length > 0 && (
+              <div className="bg-blue-50 p-3 rounded-lg">
+                <h4 className="text-sm font-medium text-blue-900 mb-2">
+                  Configurations fiscales actives ({taxConfigurations.length})
+                </h4>
+                <div className="space-y-1">
+                  {taxConfigurations.slice(0, 3).map(config => (
+                    <div key={config.id} className="text-xs text-blue-700">
+                      • {config.name}: {config.rate}% 
+                      {config.type === 'fixed_per_night' && ' par nuit'}
+                      {config.type === 'fixed_amount' && ' montant fixe'}
+                    </div>
+                  ))}
+                  {taxConfigurations.length > 3 && (
+                    <div className="text-xs text-blue-600">
+                      ... et {taxConfigurations.length - 3} autres
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             <button
               type="submit"
-              disabled={loading}
-              className="w-full inline-flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+              disabled={loading || !watchEstablishmentId}
+              className="w-full inline-flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? (
                 <>
@@ -325,8 +418,8 @@ const TaxCalculator = () => {
           
           {calculation ? (
             <div className="space-y-4">
-              {/* Résumé */}
-              <div className="bg-gray-50 p-4 rounded-lg">
+              {/* Résumé principal */}
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-lg border border-blue-200">
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-sm font-medium text-gray-700">Sous-total:</span>
                   <span className="text-sm text-gray-900">{formatCurrency(calculation.subtotal)}</span>
@@ -335,42 +428,69 @@ const TaxCalculator = () => {
                   <span className="text-sm font-medium text-gray-700">Total taxes:</span>
                   <span className="text-sm text-gray-900">{formatCurrency(calculation.totalTax)}</span>
                 </div>
-                <div className="flex justify-between items-center text-lg font-bold">
-                  <span className="text-gray-900">Total final:</span>
-                  <span className="text-blue-600">{formatCurrency(calculation.totalAmount)}</span>
+                <div className="border-t border-blue-200 pt-2">
+                  <div className="flex justify-between items-center text-lg font-bold">
+                    <span className="text-gray-900">Total final:</span>
+                    <span className="text-blue-600">{formatCurrency(calculation.totalAmount)}</span>
+                  </div>
                 </div>
+                {calculation.currency && (
+                  <div className="text-xs text-gray-500 mt-1 text-center">
+                    Montants en {calculation.currency}
+                  </div>
+                )}
               </div>
 
               {/* Détail des taxes */}
-              <div>
-                <h3 className="text-sm font-medium text-gray-900 mb-3">Détail des taxes applicables</h3>
-                <div className="space-y-2">
-                  {calculation.taxDetails?.map((tax, index) => (
-                    <div key={index} className="flex justify-between items-center py-2 border-b border-gray-200">
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">{tax.name}</p>
-                        <p className="text-xs text-gray-500">
-                          {tax.rate}% • {Array.isArray(tax.appliedTo) ? tax.appliedTo.join(', ') : tax.appliedTo}
-                        </p>
+              {calculation.taxDetails && calculation.taxDetails.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-medium text-gray-900 mb-3 flex items-center">
+                    <DocumentTextIcon className="w-4 h-4 mr-1" />
+                    Détail des taxes applicables
+                  </h3>
+                  <div className="space-y-2">
+                    {calculation.taxDetails.map((tax, index) => (
+                      <div key={index} className="flex justify-between items-center py-2 px-3 border border-gray-200 rounded">
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-gray-900">{tax.name}</p>
+                          <p className="text-xs text-gray-500">
+                            {tax.rate}%
+                            {tax.type === 'fixed_per_night' && ' par nuit'}
+                            {tax.type === 'fixed_amount' && ' montant fixe'}
+                            {tax.appliedTo && ` • ${Array.isArray(tax.appliedTo) ? tax.appliedTo.join(', ') : tax.appliedTo}`}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-sm font-medium text-gray-900">
+                            {formatCurrency(tax.taxAmount)}
+                          </span>
+                          {tax.taxableAmount && (
+                            <div className="text-xs text-gray-500">
+                              sur {formatCurrency(tax.taxableAmount)}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      <span className="text-sm font-medium text-gray-900">
-                        {formatCurrency(tax.taxAmount)}
-                      </span>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Exonérations */}
               {calculation.exemptions && calculation.exemptions.length > 0 && (
                 <div>
-                  <h3 className="text-sm font-medium text-gray-900 mb-3">Exonérations appliquées</h3>
+                  <h3 className="text-sm font-medium text-gray-900 mb-3 flex items-center">
+                    <CheckCircleIcon className="w-4 h-4 mr-1 text-green-600" />
+                    Exonérations appliquées
+                  </h3>
                   <div className="space-y-2">
                     {calculation.exemptions.map((exemption, index) => (
-                      <div key={index} className="flex justify-between items-center py-2 border-b border-gray-200">
+                      <div key={index} className="flex justify-between items-center py-2 px-3 bg-green-50 border border-green-200 rounded">
                         <div>
                           <p className="text-sm font-medium text-green-700">{exemption.reason}</p>
-                          <p className="text-xs text-gray-500">Document: {exemption.documentNumber}</p>
+                          {exemption.documentNumber && (
+                            <p className="text-xs text-gray-500">Document: {exemption.documentNumber}</p>
+                          )}
                         </div>
                         <span className="text-sm font-medium text-green-700">
                           -{formatCurrency(exemption.amount)}
@@ -380,6 +500,58 @@ const TaxCalculator = () => {
                   </div>
                 </div>
               )}
+
+              {/* Informations du calcul */}
+              <div className="text-xs text-gray-500 space-y-1 p-3 bg-gray-50 rounded">
+                <div className="flex justify-between">
+                  <span>Établissement:</span>
+                  <span>{establishments.find(e => e.id === parseInt(watchEstablishmentId))?.name}</span>
+                </div>
+                {watchClientId && (
+                  <div className="flex justify-between">
+                    <span>Client:</span>
+                    <span>{getClientName(watchClientId)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span>Calculé le:</span>
+                  <span>{new Date().toLocaleString('fr-FR')}</span>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="space-y-2">
+                <button
+                  onClick={() => {
+                    const data = {
+                      calculation,
+                      establishment: establishments.find(e => e.id === parseInt(watchEstablishmentId)),
+                      client: watchClientId ? clients.find(c => c.id === parseInt(watchClientId)) : null,
+                      timestamp: new Date().toISOString()
+                    };
+                    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `calcul_taxes_${new Date().toISOString().split('T')[0]}.json`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                  }}
+                  className="w-full inline-flex items-center justify-center px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+                >
+                  <DocumentTextIcon className="w-4 h-4 mr-2" />
+                  Exporter le calcul
+                </button>
+                
+                <button
+                  onClick={() => window.print()}
+                  className="w-full inline-flex items-center justify-center px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+                >
+                  Imprimer
+                </button>
+              </div>
             </div>
           ) : (
             <div className="text-center py-8">
@@ -388,6 +560,22 @@ const TaxCalculator = () => {
               <p className="mt-1 text-sm text-gray-500">
                 Remplissez le formulaire et cliquez sur "Calculer" pour voir les taxes applicables.
               </p>
+              
+              {!watchEstablishmentId && (
+                <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                  <div className="flex">
+                    <ExclamationTriangleIcon className="h-5 w-5 text-yellow-400" />
+                    <div className="ml-3">
+                      <h3 className="text-sm font-medium text-yellow-800">
+                        Établissement requis
+                      </h3>
+                      <p className="mt-1 text-sm text-yellow-700">
+                        Sélectionnez d'abord un établissement pour voir ses configurations fiscales.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

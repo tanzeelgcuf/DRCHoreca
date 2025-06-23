@@ -1,3 +1,4 @@
+// src/components/TaxReports.js - Fixed with correct icon imports
 import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
@@ -6,7 +7,7 @@ import {
   ChartBarIcon,
   CalendarIcon,
   CurrencyDollarIcon,
-  DownloadIcon,
+  ArrowDownTrayIcon as DownloadIcon,
   EyeIcon
 } from '@heroicons/react/24/outline';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';

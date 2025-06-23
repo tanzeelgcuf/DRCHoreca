@@ -1,3 +1,4 @@
+// src/App.js - Updated with all routes and real API integration
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
@@ -11,6 +12,9 @@ import TaxConfigurations from './components/TaxConfigurations';
 import TaxExemptions from './components/TaxExemptions';
 import TaxReports from './components/TaxReports';
 import TaxCalculator from './components/TaxCalculator';
+import Users from './components/Users';
+import Clients from './components/Clients';
+import Stays from './components/Stays';
 import { authService } from './services/api';
 
 function App() {
@@ -84,6 +88,9 @@ function App() {
                   <Route path="/exemptions" element={<TaxExemptions />} />
                   <Route path="/calculateur" element={<TaxCalculator />} />
                   <Route path="/rapports" element={<TaxReports />} />
+                  <Route path="/utilisateurs" element={<Users />} />
+                  <Route path="/clients" element={<Clients />} />
+                  <Route path="/sejours" element={<Stays />} />
                   {/* Catch all route */}
                   <Route path="*" element={<Navigate to="/dashboard" replace />} />
                 </Routes>
