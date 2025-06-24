@@ -1,10 +1,10 @@
-// src/services/api.js - Updated to connect to real backend
+// src/services/api.js - Enhanced with proper error handling and backend connection
 import axios from 'axios';
 
-// API Configuration based on your backend
+// Base API URL from environment configuration
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://34.30.198.6:8080/api/v1';
 
-// Create axios instance
+// Create axios instance with proper configuration
 const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 15000,
@@ -22,36 +22,100 @@ api.interceptors.request.use(
     }
     return config;
   },
-  (error) => Promise.reject(error)
+  (error) => {
+    console.error('API Request Error:', error);
+    return Promise.reject(error);
+  }
 );
 
-// Response interceptor to handle errors
+// Response interceptor with enhanced error handling
 api.interceptors.response.use(
-  (response) => response.data,
+  (response) => {
+    // Successfully received a response
+    return response.data;
+  },
   (error) => {
-    console.error('API Error:', error.response?.data || error.message);
+    // Capture detailed error information for debugging
+    console.error('API Error Response:', {
+      status: error.response?.status,
+      url: error.config?.url,
+      method: error.config?.method,
+      data: error.config?.data,
+      responseData: error.response?.data
+    });
+
+    // Handle authentication errors
     if (error.response?.status === 401) {
       localStorage.removeItem('drc_token');
       window.location.href = '/hotel/';
     }
-    return Promise.reject(error.response?.data || error.message);
+    
+    // Return a rejected promise with detailed error information
+    return Promise.reject({
+      message: error.response?.data?.error || error.response?.data?.message || error.message || 'Unknown error occurred',
+      status: error.response?.status,
+      details: error.response?.data?.details || {},
+      originalError: error
+    });
   }
 );
 
-// Authentication service - matches your backend auth endpoints
+// Authentication service - properly handles login/logout
 export const authService = {
   login: async (username, password) => {
     try {
       const response = await api.post('/auth/login', { username, password });
+      
+      // Demo mode fallback for testing without backend
+      if (process.env.REACT_APP_ENV === 'development' && username === 'demo' && password === 'demo') {
+        return {
+          token: 'demo-token',
+          user: {
+            id: 1,
+            username: 'demo',
+            firstName: 'Utilisateur',
+            lastName: 'Demo',
+            role: 'admin'
+          }
+        };
+      }
+      
       return response;
     } catch (error) {
       console.error('Login failed:', error);
+      
+      // Demo mode fallback for testing without backend
+      if (process.env.REACT_APP_ENV === 'development' && username === 'demo' && password === 'demo') {
+        return {
+          token: 'demo-token',
+          user: {
+            id: 1,
+            username: 'demo',
+            firstName: 'Utilisateur',
+            lastName: 'Demo',
+            role: 'admin'
+          }
+        };
+      }
+      
       throw error;
     }
   },
 
   getProfile: async () => {
     try {
+      // Demo mode handling
+      const token = localStorage.getItem('drc_token');
+      if (token === 'demo-token') {
+        return {
+          id: 1,
+          username: 'demo',
+          firstName: 'Utilisateur',
+          lastName: 'Demo',
+          role: 'admin'
+        };
+      }
+      
       const response = await api.get('/auth/profile');
       return response;
     } catch (error) {
@@ -63,15 +127,17 @@ export const authService = {
   logout: async () => {
     try {
       await api.post('/auth/logout');
+    } catch (error) {
+      console.error('Logout error:', error);
     } finally {
       localStorage.removeItem('drc_token');
     }
   }
 };
 
-// Tax service - matches your backend tax endpoints exactly
+// Tax service - implements all tax-related endpoints
 export const taxService = {
-  // Tax Configurations - matches /taxes/configurations endpoints
+  // Tax Configurations
   getTaxConfigurations: async (params = {}) => {
     try {
       const queryString = new URLSearchParams(params).toString();
@@ -95,7 +161,15 @@ export const taxService = {
 
   createTaxConfiguration: async (data) => {
     try {
-      const response = await api.post('/taxes/configurations', data);
+      // Format data to match API expectations
+      const formattedData = {
+        ...data,
+        rate: parseFloat(data.rate),
+        establishmentId: parseInt(data.establishmentId),
+        active: data.active === 'true' || data.active === true
+      };
+      
+      const response = await api.post('/taxes/configurations', formattedData);
       return response;
     } catch (error) {
       console.error('Error creating tax configuration:', error);
@@ -105,7 +179,15 @@ export const taxService = {
 
   updateTaxConfiguration: async (id, data) => {
     try {
-      const response = await api.put(`/taxes/configurations/${id}`, data);
+      // Format data to match API expectations
+      const formattedData = {
+        ...data,
+        rate: parseFloat(data.rate),
+        establishmentId: parseInt(data.establishmentId),
+        active: data.active === 'true' || data.active === true
+      };
+      
+      const response = await api.put(`/taxes/configurations/${id}`, formattedData);
       return response;
     } catch (error) {
       console.error('Error updating tax configuration:', error);
@@ -123,7 +205,7 @@ export const taxService = {
     }
   },
 
-  // Tax Exemptions - matches /taxes/exemptions endpoints
+  // Tax Exemptions
   getTaxExemptions: async (params = {}) => {
     try {
       const queryString = new URLSearchParams(params).toString();
@@ -137,7 +219,16 @@ export const taxService = {
 
   createTaxExemption: async (data) => {
     try {
-      const response = await api.post('/taxes/exemptions', data);
+      // Format data to match API expectations
+      const formattedData = {
+        ...data,
+        establishmentId: parseInt(data.establishmentId),
+        clientId: parseInt(data.clientId),
+        taxConfigurationId: parseInt(data.taxConfigurationId),
+        active: data.active === 'true' || data.active === true
+      };
+      
+      const response = await api.post('/taxes/exemptions', formattedData);
       return response;
     } catch (error) {
       console.error('Error creating tax exemption:', error);
@@ -147,7 +238,16 @@ export const taxService = {
 
   updateTaxExemption: async (id, data) => {
     try {
-      const response = await api.put(`/taxes/exemptions/${id}`, data);
+      // Format data to match API expectations
+      const formattedData = {
+        ...data,
+        establishmentId: parseInt(data.establishmentId),
+        clientId: parseInt(data.clientId),
+        taxConfigurationId: parseInt(data.taxConfigurationId),
+        active: data.active === 'true' || data.active === true
+      };
+      
+      const response = await api.put(`/taxes/exemptions/${id}`, formattedData);
       return response;
     } catch (error) {
       console.error('Error updating tax exemption:', error);
@@ -165,7 +265,7 @@ export const taxService = {
     }
   },
 
-  // Tax Reports - matches /taxes/report endpoint
+  // Tax Reports
   getTaxReport: async (params = {}) => {
     try {
       const queryString = new URLSearchParams(params).toString();
@@ -177,10 +277,25 @@ export const taxService = {
     }
   },
 
-  // Tax Calculation - matches /taxes/calculate endpoint
+  // Tax Calculation
   calculateTax: async (data) => {
     try {
-      const response = await api.post('/taxes/calculate', data);
+      // Format data to match API expectations
+      const calculationData = {
+        ...data,
+        establishmentId: parseInt(data.establishmentId),
+        clientId: data.clientId ? parseInt(data.clientId) : undefined,
+        stayId: data.stayId ? parseInt(data.stayId) : undefined,
+        items: data.items.map(item => ({
+          type: item.type,
+          description: item.description,
+          quantity: parseInt(item.quantity) || 1,
+          unitPrice: parseFloat(item.unitPrice) || 0,
+          totalPrice: parseFloat(item.totalPrice) || 0
+        }))
+      };
+      
+      const response = await api.post('/taxes/calculate', calculationData);
       return response;
     } catch (error) {
       console.error('Error calculating tax:', error);
@@ -189,7 +304,7 @@ export const taxService = {
   }
 };
 
-// Establishment service - matches /establishments endpoints
+// Establishment service - implements all establishment-related endpoints
 export const establishmentService = {
   getEstablishments: async (params = {}) => {
     try {
@@ -214,7 +329,15 @@ export const establishmentService = {
 
   createEstablishment: async (data) => {
     try {
-      const response = await api.post('/establishments', data);
+      // Convert numeric values
+      const formattedData = {
+        ...data,
+        totalRooms: data.totalRooms ? parseInt(data.totalRooms) : undefined
+      };
+      
+      console.log('Creating establishment with data:', formattedData);
+      const response = await api.post('/establishments', formattedData);
+      console.log('Establishment creation response:', response);
       return response;
     } catch (error) {
       console.error('Error creating establishment:', error);
@@ -224,7 +347,13 @@ export const establishmentService = {
 
   updateEstablishment: async (id, data) => {
     try {
-      const response = await api.put(`/establishments/${id}`, data);
+      // Convert numeric values
+      const formattedData = {
+        ...data,
+        totalRooms: data.totalRooms ? parseInt(data.totalRooms) : undefined
+      };
+      
+      const response = await api.put(`/establishments/${id}`, formattedData);
       return response;
     } catch (error) {
       console.error('Error updating establishment:', error);
@@ -244,10 +373,22 @@ export const establishmentService = {
 
   registerDRCHotel: async (data) => {
     try {
+      console.log('Registering DRC hotel with data:', data);
       const response = await api.post('/establishments/register-drc-hotel', data);
+      console.log('DRC hotel registration response:', response);
       return response;
     } catch (error) {
       console.error('Error registering DRC hotel:', error);
+      throw error;
+    }
+  },
+
+  verifyEstablishment: async (id, data) => {
+    try {
+      const response = await api.post(`/establishments/${id}/verify`, data);
+      return response;
+    } catch (error) {
+      console.error('Error verifying establishment:', error);
       throw error;
     }
   },
@@ -264,7 +405,7 @@ export const establishmentService = {
   }
 };
 
-// Client service - matches /clients endpoints
+// Client service - implements all client-related endpoints
 export const clientService = {
   getClients: async (params = {}) => {
     try {
@@ -379,7 +520,7 @@ export const clientService = {
   }
 };
 
-// Stay service - matches /stays endpoints
+// Stay service - implements all stay-related endpoints
 export const stayService = {
   getStays: async (params = {}) => {
     try {
@@ -463,7 +604,7 @@ export const stayService = {
   }
 };
 
-// User service - matches /users endpoints
+// User service - implements all user-related endpoints
 export const userService = {
   getUsers: async (params = {}) => {
     try {
@@ -524,10 +665,30 @@ export const userService = {
       console.error('Error changing password:', error);
       throw error;
     }
+  },
+
+  lockUser: async (id, data) => {
+    try {
+      const response = await api.post(`/users/${id}/lock`, data);
+      return response;
+    } catch (error) {
+      console.error('Error locking user:', error);
+      throw error;
+    }
+  },
+
+  unlockUser: async (id) => {
+    try {
+      const response = await api.post(`/users/${id}/unlock`);
+      return response;
+    } catch (error) {
+      console.error('Error unlocking user:', error);
+      throw error;
+    }
   }
 };
 
-// Document service - matches /documents endpoints
+// Document service - implements all document-related endpoints
 export const documentService = {
   uploadDocument: async (formData) => {
     try {
@@ -564,22 +725,77 @@ export const documentService = {
     }
   },
 
-  verifyDocument: async (id, data) => {
+  generateTemporaryUrl: async (id, data) => {
     try {
-      const response = await api.post(`/documents/${id}/verify`, data);
+      const response = await api.post(`/documents/${id}/url`, data);
       return response;
     } catch (error) {
-      console.error('Error verifying document:', error);
+      console.error('Error generating temporary URL:', error);
       throw error;
     }
   },
 
-  rejectDocument: async (id, data) => {
+  optimizeDocument: async (id, data) => {
     try {
-      const response = await api.post(`/documents/${id}/reject`, data);
+      const response = await api.post(`/documents/${id}/optimize`, data);
       return response;
     } catch (error) {
-      console.error('Error rejecting document:', error);
+      console.error('Error optimizing document:', error);
+      throw error;
+    }
+  },
+
+  getStorageStats: async (params = {}) => {
+    try {
+      const queryString = new URLSearchParams(params).toString();
+      const response = await api.get(`/documents/storage-stats${queryString ? `?${queryString}` : ''}`);
+      return response;
+    } catch (error) {
+      console.error('Error fetching storage stats:', error);
+      throw error;
+    }
+  }
+};
+
+// API key service - implements all API key-related endpoints
+export const apiKeyService = {
+  getApiKeys: async (params = {}) => {
+    try {
+      const queryString = new URLSearchParams(params).toString();
+      const response = await api.get(`/api-keys${queryString ? `?${queryString}` : ''}`);
+      return response;
+    } catch (error) {
+      console.error('Error fetching API keys:', error);
+      throw error;
+    }
+  },
+
+  createApiKey: async (data) => {
+    try {
+      const response = await api.post('/api-keys', data);
+      return response;
+    } catch (error) {
+      console.error('Error creating API key:', error);
+      throw error;
+    }
+  },
+
+  deleteApiKey: async (id) => {
+    try {
+      const response = await api.delete(`/api-keys/${id}`);
+      return response;
+    } catch (error) {
+      console.error('Error deleting API key:', error);
+      throw error;
+    }
+  },
+
+  verifyApiKey: async () => {
+    try {
+      const response = await api.get('/auth/verify-api-key');
+      return response;
+    } catch (error) {
+      console.error('Error verifying API key:', error);
       throw error;
     }
   }

@@ -1,4 +1,3 @@
-// src/components/TaxCalculator.js - Enhanced version with full backend integration
 import React, { useState, useEffect } from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
 import toast from 'react-hot-toast';
@@ -9,7 +8,8 @@ import {
   CurrencyDollarIcon,
   ExclamationTriangleIcon,
   CheckCircleIcon,
-  DocumentTextIcon
+  DocumentTextIcon,
+  ArrowPathIcon
 } from '@heroicons/react/24/outline';
 import { taxService, establishmentService, clientService, stayService } from '../services/api';
 
@@ -21,6 +21,8 @@ const TaxCalculator = () => {
   const [calculation, setCalculation] = useState(null);
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState(null);
 
   const { register, handleSubmit, control, watch, reset, formState: { errors } } = useForm({
     defaultValues: {
@@ -62,28 +64,50 @@ const TaxCalculator = () => {
   const fetchInitialData = async () => {
     try {
       setLoadingData(true);
+      setError(null);
+      
+      console.log('Fetching initial data for tax calculator');
+      
       const [establishmentsResponse, clientsResponse] = await Promise.all([
         establishmentService.getEstablishments(),
         clientService.getClients()
       ]);
       
-      setEstablishments(establishmentsResponse.data || []);
-      setClients(clientsResponse.data || []);
+      console.log('Initial data responses:', {
+        establishments: establishmentsResponse,
+        clients: clientsResponse
+      });
+      
+      // Safely handle the response structure
+      const establishmentsData = establishmentsResponse?.data || establishmentsResponse?.establishments || [];
+      const clientsData = clientsResponse?.data || clientsResponse?.clients || [];
+      
+      setEstablishments(Array.isArray(establishmentsData) ? establishmentsData : []);
+      setClients(Array.isArray(clientsData) ? clientsData : []);
     } catch (error) {
       console.error('Error fetching initial data:', error);
-      toast.error('Erreur lors du chargement des données initiales');
+      setError(error.message || 'Erreur lors du chargement des données initiales');
+      toast.error('Erreur lors du chargement des données');
     } finally {
       setLoadingData(false);
+      setRefreshing(false);
     }
   };
 
   const fetchStaysForEstablishment = async (establishmentId) => {
     try {
+      console.log('Fetching stays for establishment:', establishmentId);
+      
       const response = await stayService.getStays({ 
         establishmentId,
         status: 'active'
       });
-      setStays(response.data || []);
+      
+      console.log('Stays response:', response);
+      
+      // Safely handle the response structure
+      const staysData = response?.data || response?.stays || [];
+      setStays(Array.isArray(staysData) ? staysData : []);
     } catch (error) {
       console.error('Error fetching stays:', error);
       setStays([]);
@@ -92,11 +116,18 @@ const TaxCalculator = () => {
 
   const fetchTaxConfigurations = async (establishmentId) => {
     try {
+      console.log('Fetching tax configurations for establishment:', establishmentId);
+      
       const response = await taxService.getTaxConfigurations({ 
         establishmentId,
         active: true
       });
-      setTaxConfigurations(response.data || []);
+      
+      console.log('Tax configurations response:', response);
+      
+      // Safely handle the response structure
+      const configsData = response?.data || response?.configurations || [];
+      setTaxConfigurations(Array.isArray(configsData) ? configsData : []);
     } catch (error) {
       console.error('Error fetching tax configurations:', error);
       setTaxConfigurations([]);
@@ -106,6 +137,7 @@ const TaxCalculator = () => {
   const handleCalculate = async (data) => {
     try {
       setLoading(true);
+      setError(null);
       
       // Prepare data for API call according to backend spec
       const calculationData = {
@@ -125,10 +157,13 @@ const TaxCalculator = () => {
       console.log('Sending calculation request:', calculationData);
       
       const response = await taxService.calculateTax(calculationData);
+      console.log('Calculation response:', response);
+      
       setCalculation(response);
       toast.success('Calcul effectué avec succès');
     } catch (error) {
       console.error('Error calculating tax:', error);
+      setError(error.message || 'Erreur lors du calcul des taxes');
       toast.error(error.message || 'Erreur lors du calcul des taxes');
       
       // Show more specific error details if available
@@ -140,6 +175,12 @@ const TaxCalculator = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    fetchInitialData();
+    setCalculation(null);
   };
 
   const addItem = () => {
@@ -188,11 +229,37 @@ const TaxCalculator = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">Calculateur de taxes</h1>
-        <p className="text-gray-600 mt-2">Calculez les taxes applicables à un séjour selon votre configuration</p>
+      {/* Header with refresh button */}
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Calculateur de taxes</h1>
+          <p className="text-gray-600 mt-2">Calculez les taxes applicables à un séjour selon votre configuration</p>
+        </div>
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing || loading}
+          className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+        >
+          <ArrowPathIcon className={`w-4 h-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+          Actualiser
+        </button>
       </div>
+
+      {/* Error message */}
+      {error && (
+        <div className="bg-red-50 border-l-4 border-red-400 p-4 mb-4">
+          <div className="flex">
+            <div className="flex-shrink-0">
+              <ExclamationTriangleIcon className="h-5 w-5 text-red-400" />
+            </div>
+            <div className="ml-3">
+              <p className="text-sm text-red-700">
+                {error}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         {/* Formulaire de calcul */}
@@ -251,8 +318,10 @@ const TaxCalculator = () => {
                   <option value="">Sélectionnez un séjour</option>
                   {stays.map(stay => (
                     <option key={stay.id} value={stay.id}>
-                      Chambre {stay.room} - {stay.duration} nuits 
-                      {stay.client && ` (${stay.client.firstName} ${stay.client.lastName})`}
+                      Chambre {stay.room} - {stay.duration || '?'} nuits 
+                      {stay.clientId && clients.find(c => c.id === stay.clientId) ? 
+                        ` (${clients.find(c => c.id === stay.clientId).firstName} ${clients.find(c => c.id === stay.clientId).lastName})` :
+                        ''}
                     </option>
                   ))}
                 </select>
