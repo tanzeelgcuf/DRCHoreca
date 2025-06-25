@@ -1,4 +1,4 @@
-// src/components/Users.js - User Management Component
+// Updated from src/components/Users.js
 import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
@@ -36,16 +36,46 @@ const Users = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
+      console.log('Fetching users with filters:', filters);
+      
+      // Fetch users and establishments in parallel
       const [usersResponse, establishmentsResponse] = await Promise.all([
         userService.getUsers(filters),
         establishmentService.getEstablishments()
       ]);
       
-      setUsers(usersResponse.data || []);
-      setEstablishments(establishmentsResponse.data || []);
+      console.log('Users response:', usersResponse);
+      console.log('Establishments response:', establishmentsResponse);
+      
+      // Improved handling of users response
+      let usersData = [];
+      if (usersResponse && Array.isArray(usersResponse)) {
+        usersData = usersResponse;
+      } else if (usersResponse && usersResponse.users && Array.isArray(usersResponse.users)) {
+        usersData = usersResponse.users;
+      } else if (usersResponse && usersResponse.data && Array.isArray(usersResponse.data)) {
+        usersData = usersResponse.data;
+      } else if (usersResponse && typeof usersResponse === 'object') {
+        usersData = [usersResponse];
+      }
+      console.log('Extracted users data:', usersData);
+      
+      // Improved handling of establishments response
+      let establishmentsData = [];
+      if (establishmentsResponse && Array.isArray(establishmentsResponse)) {
+        establishmentsData = establishmentsResponse;
+      } else if (establishmentsResponse && establishmentsResponse.establishments && Array.isArray(establishmentsResponse.establishments)) {
+        establishmentsData = establishmentsResponse.establishments;
+      } else if (establishmentsResponse && establishmentsResponse.data && Array.isArray(establishmentsResponse.data)) {
+        establishmentsData = establishmentsResponse.data;
+      }
+      console.log('Extracted establishments data:', establishmentsData);
+      
+      setUsers(usersData);
+      setEstablishments(establishmentsData);
     } catch (error) {
       console.error('Error fetching data:', error);
-      toast.error('Erreur lors du chargement des données');
+      toast.error('Erreur lors du chargement des données: ' + (error.message || 'Erreur inconnue'));
     } finally {
       setLoading(false);
     }
@@ -53,27 +83,44 @@ const Users = () => {
 
   const handleCreateOrUpdate = async (data) => {
     try {
+      console.log('Form data before processing:', data);
+      
       const userData = {
         ...data,
         establishmentId: data.establishmentId ? parseInt(data.establishmentId) : null,
         active: data.active === 'true'
       };
+      
+      console.log('Processing user data for API:', userData);
 
+      let response;
       if (editingUser) {
-        await userService.updateUser(editingUser.id, userData);
+        response = await userService.updateUser(editingUser.id, userData);
+        console.log('User update response:', response);
         toast.success('Utilisateur mis à jour avec succès');
       } else {
-        await userService.createUser(userData);
-        toast.success('Utilisateur créé avec succès');
+        response = await userService.createUser(userData);
+        console.log('User creation response:', response);
+        
+        // Extract the user from the response if available
+        if (response && response.user) {
+          console.log('Created user:', response.user);
+        }
+        
+        toast.success(response?.message || 'Utilisateur créé avec succès');
       }
 
       setShowModal(false);
       setEditingUser(null);
       reset();
-      fetchData();
+      
+      // Force a small delay before fetching data to ensure the server has processed the change
+      setTimeout(() => {
+        fetchData();
+      }, 500);
     } catch (error) {
       console.error('Error saving user:', error);
-      toast.error('Erreur lors de la sauvegarde');
+      toast.error(`Erreur lors de la sauvegarde: ${error.message || 'Veuillez vérifier tous les champs'}`);
     }
   };
 
@@ -81,7 +128,7 @@ const Users = () => {
     setEditingUser(user);
     reset({
       ...user,
-      establishmentId: user.establishmentId || '',
+      establishmentId: user.establishmentId?.toString() || '',
       active: user.active ? 'true' : 'false'
     });
     setShowModal(true);
@@ -95,7 +142,7 @@ const Users = () => {
         fetchData();
       } catch (error) {
         console.error('Error deleting user:', error);
-        toast.error('Erreur lors de la suppression');
+        toast.error(`Erreur lors de la suppression: ${error.message || 'Une erreur est survenue'}`);
       }
     }
   };
@@ -152,8 +199,9 @@ const Users = () => {
   };
 
   const getEstablishmentName = (establishmentId) => {
+    if (!establishmentId) return 'Aucun établissement';
     const establishment = establishments.find(est => est.id === establishmentId);
-    return establishment ? establishment.name : 'Aucun établissement';
+    return establishment ? establishment.name : `ID: ${establishmentId}`;
   };
 
   if (loading) {

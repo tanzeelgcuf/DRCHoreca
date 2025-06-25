@@ -1,4 +1,4 @@
-// Updated from src/services/establishmentService.js
+// src/components/Establishments.js
 import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';

@@ -9,7 +9,8 @@ import {
   UserGroupIcon,
   ArrowPathIcon,
   CalendarIcon,
-  CurrencyDollarIcon
+  CurrencyDollarIcon,
+  PlusIcon
 } from '@heroicons/react/24/outline';
 import { taxService, establishmentService, clientService, stayService } from '../services/api';
 import toast from 'react-hot-toast';
